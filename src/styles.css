@@ -195,6 +195,13 @@
 @keyframes equalizer { 0%,100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
 @keyframes drift { 0% { transform: translate(0,0); } 100% { transform: translate(40px,-60px); } }
 @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
 
 .animate-float-y { animation: float-y 4s ease-in-out infinite; }
 .animate-pulse-ring { animation: pulse-ring 1.6s ease-out infinite; }
