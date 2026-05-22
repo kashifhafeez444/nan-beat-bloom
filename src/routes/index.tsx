@@ -1,26 +1,47 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { Intro } from "@/components/beat-wall/Intro";
+import { Gameplay, type GameResult } from "@/components/beat-wall/Gameplay";
+import { Results } from "@/components/beat-wall/Results";
 
 export const Route = createFileRoute("/")({
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. For sites with multiple pages (About, Services, Contact, etc.),
-// create separate route files (about.tsx, services.tsx, contact.tsx) — don't put all pages in this file.
-function PlaceholderIndex() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
-}
-
 function Index() {
-  return <PlaceholderIndex />;
+  const [phase, setPhase] = useState<"intro" | "play" | "results">("intro");
+  const [player, setPlayer] = useState({ name: "", email: "" });
+  const [result, setResult] = useState<GameResult | null>(null);
+
+  if (phase === "intro") {
+    return (
+      <Intro
+        onStart={(name, email) => {
+          setPlayer({ name, email });
+          setPhase("play");
+        }}
+      />
+    );
+  }
+  if (phase === "play") {
+    return (
+      <Gameplay
+        playerName={player.name}
+        onEnd={(r) => {
+          setResult(r);
+          setPhase("results");
+        }}
+      />
+    );
+  }
+  return (
+    <Results
+      result={result!}
+      playerName={player.name}
+      onReplay={() => {
+        setResult(null);
+        setPhase("intro");
+      }}
+    />
+  );
 }
