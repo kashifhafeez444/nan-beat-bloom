@@ -63,14 +63,14 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
+  --background: oklch(0.12 0.08 270);
+  --foreground: oklch(0.98 0.01 250);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.129 0.042 264.695);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
+  --primary: oklch(0.78 0.18 220);
+  --primary-foreground: oklch(0.12 0.05 270);
   --secondary: oklch(0.968 0.007 247.896);
   --secondary-foreground: oklch(0.208 0.042 265.755);
   --muted: oklch(0.968 0.007 247.896);
@@ -82,6 +82,15 @@
   --border: oklch(0.929 0.013 255.508);
   --input: oklch(0.929 0.013 255.508);
   --ring: oklch(0.704 0.04 256.788);
+  /* NAN Beat Wall neon palette */
+  --neon-cyan: oklch(0.85 0.18 220);
+  --neon-purple: oklch(0.65 0.28 305);
+  --neon-pink: oklch(0.72 0.27 340);
+  --neon-gold: oklch(0.85 0.18 90);
+  --neon-green: oklch(0.82 0.22 150);
+  --neon-orange: oklch(0.78 0.2 50);
+  --deep-blue: oklch(0.18 0.12 270);
+  --deep-blue-2: oklch(0.1 0.08 265);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -140,5 +149,68 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    overflow: hidden;
+    font-family: 'Orbitron', 'Inter', system-ui, sans-serif;
   }
+}
+
+/* ===================== NAN BEAT WALL ===================== */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@theme inline {
+  --color-neon-cyan: var(--neon-cyan);
+  --color-neon-purple: var(--neon-purple);
+  --color-neon-pink: var(--neon-pink);
+  --color-neon-gold: var(--neon-gold);
+  --color-neon-green: var(--neon-green);
+  --color-neon-orange: var(--neon-orange);
+  --color-deep-blue: var(--deep-blue);
+  --color-deep-blue-2: var(--deep-blue-2);
+}
+
+@layer utilities {
+  .font-display { font-family: 'Orbitron', sans-serif; letter-spacing: 0.04em; }
+  .glass {
+    background: linear-gradient(140deg, color-mix(in oklch, var(--neon-cyan) 8%, transparent), color-mix(in oklch, var(--neon-purple) 6%, transparent));
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid color-mix(in oklch, var(--neon-cyan) 30%, transparent);
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--neon-cyan) 15%, transparent) inset,
+      0 10px 40px -10px color-mix(in oklch, var(--neon-purple) 40%, transparent);
+  }
+  .glass-strong {
+    background: linear-gradient(140deg, color-mix(in oklch, var(--neon-cyan) 14%, transparent), color-mix(in oklch, var(--neon-purple) 10%, transparent));
+    backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid color-mix(in oklch, var(--neon-cyan) 45%, transparent);
+  }
+  .neon-text-cyan { color: var(--neon-cyan); text-shadow: 0 0 12px color-mix(in oklch, var(--neon-cyan) 70%, transparent), 0 0 30px color-mix(in oklch, var(--neon-cyan) 40%, transparent); }
+  .neon-text-pink { color: var(--neon-pink); text-shadow: 0 0 14px color-mix(in oklch, var(--neon-pink) 70%, transparent), 0 0 36px color-mix(in oklch, var(--neon-pink) 40%, transparent); }
+  .neon-text-gold { color: var(--neon-gold); text-shadow: 0 0 14px color-mix(in oklch, var(--neon-gold) 70%, transparent), 0 0 36px color-mix(in oklch, var(--neon-gold) 40%, transparent); }
+  .neon-text-white { color: oklch(0.98 0 0); text-shadow: 0 0 14px color-mix(in oklch, var(--neon-cyan) 60%, transparent), 0 0 40px color-mix(in oklch, var(--neon-purple) 40%, transparent); }
+}
+
+@keyframes float-y { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+@keyframes pulse-ring { 0% { transform: scale(0.8); opacity: 0.8; } 100% { transform: scale(2.2); opacity: 0; } }
+@keyframes equalizer { 0%,100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+@keyframes drift { 0% { transform: translate(0,0); } 100% { transform: translate(40px,-60px); } }
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+.animate-float-y { animation: float-y 4s ease-in-out infinite; }
+.animate-pulse-ring { animation: pulse-ring 1.6s ease-out infinite; }
+
+/* Scene gradient */
+.scene-bg {
+  background:
+    radial-gradient(ellipse at 20% 10%, color-mix(in oklch, var(--neon-cyan) 18%, transparent), transparent 50%),
+    radial-gradient(ellipse at 85% 20%, color-mix(in oklch, var(--neon-purple) 22%, transparent), transparent 55%),
+    radial-gradient(ellipse at 50% 90%, color-mix(in oklch, var(--neon-pink) 18%, transparent), transparent 55%),
+    linear-gradient(180deg, var(--deep-blue) 0%, var(--deep-blue-2) 100%);
 }
