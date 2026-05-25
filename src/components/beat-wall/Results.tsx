@@ -3,28 +3,69 @@ import { motion } from "framer-motion";
 import { Background } from "./Background";
 import nanLogo from "@/assets/nan-logo.png";
 import babyImg from "@/assets/baby.png";
-import { FORMULAS, playRecording } from "@/lib/audio";
+import { FORMULAS, renderMixToUrl } from "@/lib/audio";
 import type { GameResult } from "./Gameplay";
-import { Play, Pause, RotateCcw } from "lucide-react";
+import { Play, Pause, RotateCcw, Download } from "lucide-react";
 
 export function Results({ result, playerName, onReplay }: { result: GameResult; playerName: string; onReplay: () => void }) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
-  const stopRef = useRef<(() => void) | null>(null);
+  const [mixUrl, setMixUrl] = useState<string | null>(null);
+  const [mixDuration, setMixDuration] = useState(0);
+  const [rendering, setRendering] = useState(true);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  useEffect(() => () => stopRef.current?.(), []);
+  // Render the personalized stem-based mix to a downloadable WAV blob URL
+  useEffect(() => {
+    let cancelled = false;
+    setRendering(true);
+    renderMixToUrl(result.hits, result.duration)
+      .then(({ url, duration }) => {
+        if (cancelled) { URL.revokeObjectURL(url); return; }
+        setMixUrl(url);
+        setMixDuration(duration);
+        setRendering(false);
+      })
+      .catch(() => setRendering(false));
+    return () => {
+      cancelled = true;
+      if (mixUrl) URL.revokeObjectURL(mixUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Drive progress bar from <audio> element
+  useEffect(() => {
+    const a = audioRef.current; if (!a) return;
+    const onTime = () => setProgress(a.duration ? a.currentTime / a.duration : 0);
+    const onEnd = () => { setPlaying(false); setProgress(1); };
+    a.addEventListener("timeupdate", onTime);
+    a.addEventListener("ended", onEnd);
+    return () => { a.removeEventListener("timeupdate", onTime); a.removeEventListener("ended", onEnd); };
+  }, [mixUrl]);
 
   const play = () => {
-    if (playing) { stopRef.current?.(); setPlaying(false); return; }
-    setPlaying(true); setProgress(0);
-    stopRef.current = playRecording(result.hits, setProgress, () => setPlaying(false));
+    const a = audioRef.current; if (!a) return;
+    if (playing) { a.pause(); setPlaying(false); }
+    else { a.play(); setPlaying(true); }
+  };
+
+  const download = () => {
+    if (!mixUrl) return;
+    const a = document.createElement("a");
+    a.href = mixUrl;
+    const safe = (playerName || "player").replace(/[^a-z0-9]/gi, "_").toLowerCase();
+    a.download = `nan-beat-wall-${safe}.wav`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   const topFormulas = Object.entries(result.formulaCounts)
     .sort((a, b) => b[1] - a[1]).slice(0, 5)
     .map(([id, n]) => ({ f: FORMULAS.find((x) => x.id === id)!, n }));
 
-  const duration = result.hits.length ? result.hits[result.hits.length - 1].t + 0.5 : 0;
+  const duration = mixDuration || result.duration;
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
@@ -87,18 +128,31 @@ export function Results({ result, playerName, onReplay }: { result: GameResult; 
             <div className="glass-strong mt-6 w-full rounded-2xl p-5">
               <div className="font-display mb-3 text-[10px] tracking-[0.4em] text-[color:var(--neon-cyan)]">YOUR PERSONALIZED NAN BEAT MIX</div>
               <div className="flex items-center gap-4">
-                <button onClick={play} className="flex h-14 w-14 items-center justify-center rounded-full"
-                  style={{ background: "linear-gradient(135deg, var(--neon-cyan), var(--neon-pink))", boxShadow: "0 0 30px color-mix(in oklch, var(--neon-cyan) 60%, transparent)" }}>
+                <button
+                  onClick={play}
+                  disabled={rendering || !mixUrl}
+                  className="flex h-14 w-14 items-center justify-center rounded-full disabled:opacity-50"
+                  style={{ background: "linear-gradient(135deg, var(--neon-cyan), var(--neon-pink))", boxShadow: "0 0 30px color-mix(in oklch, var(--neon-cyan) 60%, transparent)" }}
+                >
                   {playing ? <Pause className="h-6 w-6 text-[color:var(--deep-blue-2)]" /> : <Play className="ml-1 h-6 w-6 text-[color:var(--deep-blue-2)]" />}
                 </button>
                 <div className="flex-1">
                   <Waveform progress={progress} active={playing} />
                   <div className="mt-1 flex justify-between text-[10px] tabular-nums text-white/60">
-                    <span>{fmt(progress * duration)}</span>
+                    <span>{rendering ? "RENDERING MIX…" : fmt(progress * duration)}</span>
                     <span>{fmt(duration)}</span>
                   </div>
                 </div>
+                <button
+                  onClick={download}
+                  disabled={rendering || !mixUrl}
+                  className="flex h-14 items-center gap-2 rounded-xl px-4 font-display text-xs tracking-[0.3em] text-[color:var(--deep-blue-2)] disabled:opacity-50"
+                  style={{ background: "linear-gradient(135deg, var(--neon-gold), var(--neon-pink))", boxShadow: "0 0 20px color-mix(in oklch, var(--neon-gold) 50%, transparent)" }}
+                >
+                  <Download className="h-4 w-4" /> SAVE
+                </button>
               </div>
+              {mixUrl && <audio ref={audioRef} src={mixUrl} preload="auto" hidden />}
             </div>
           </div>
 

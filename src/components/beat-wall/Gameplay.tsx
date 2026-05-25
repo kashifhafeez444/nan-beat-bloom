@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Background } from "./Background";
-import { FORMULAS, playFormula, playError, startBeat, stopBeat, setBpm, startRecording, recordHit, getRecording, isMuted, setMuted, type RecordedHit } from "@/lib/audio";
+import {
+  FORMULAS, playFormula, playError,
+  startMusic, stopMusic, setMusicIntensity,
+  startRecording, recordHit, getRecording, setMuted,
+  type RecordedHit,
+} from "@/lib/audio";
 import nanLogo from "@/assets/nan-logo.png";
 import babyImg from "@/assets/baby.png";
 import { Home, Volume2, VolumeX, Pause, Play } from "lucide-react";
@@ -11,10 +16,10 @@ const DURATION = 60;
 type ActiveBeat = {
   uid: string;
   id: string;
-  x: number; // %
-  y: number; // %
-  spawn: number;
-  lifetime: number; // ms
+  x: number;        // % horizontal column
+  sway: number;     // horizontal drift amplitude (%)
+  spawn: number;    // performance.now() ms
+  lifetime: number; // ms total travel
 };
 
 export type GameResult = {
@@ -25,6 +30,7 @@ export type GameResult = {
   formulaCounts: Record<string, number>;
   totalTaps: number;
   correctTaps: number;
+  duration: number;
 };
 
 export function Gameplay({ playerName, onEnd }: { playerName: string; onEnd: (r: GameResult) => void }) {
@@ -52,15 +58,16 @@ export function Gameplay({ playerName, onEnd }: { playerName: string; onEnd: (r:
   queueRef.current = queue;
 
   const tapStats = useRef({ total: 0, correct: 0, formulaCounts: {} as Record<string, number> });
-  const speedRef = useRef<"NORMAL" | "FAST" | "EXTREME">("NORMAL");
-  const [speedLabel, setSpeedLabel] = useState<"NORMAL" | "FAST" | "EXTREME">("NORMAL");
+  const speedRef = useRef<"CALM" | "NORMAL" | "FAST" | "EXTREME">("CALM");
+  const [speedLabel, setSpeedLabel] = useState<"CALM" | "NORMAL" | "FAST" | "EXTREME">("CALM");
 
   // Countdown
   useEffect(() => {
     if (phase !== "countdown") return;
     if (countdown <= 0) {
       setPhase("play");
-      startBeat(96);
+      startMusic();
+      setMusicIntensity(0.1);
       startRecording();
       return;
     }
@@ -75,13 +82,13 @@ export function Gameplay({ playerName, onEnd }: { playerName: string; onEnd: (r:
     return () => clearInterval(id);
   }, [phase, paused]);
 
-  // Difficulty + warnings
+  // Difficulty + warnings (4 tiers: CALM 0-20s, NORMAL 20-40s, FAST 40-50s, EXTREME 50-60s)
   useEffect(() => {
     if (phase !== "play") return;
     const elapsed = DURATION - time;
-    if (elapsed === 20) { setWarning("GET READY!  Beats are speeding up"); speedRef.current = "FAST"; setSpeedLabel("FAST"); setBpm(120); }
-    if (elapsed === 40) { setWarning("CHALLENGE MODE ACTIVATED"); speedRef.current = "EXTREME"; setSpeedLabel("EXTREME"); setBpm(140); }
-    if (elapsed === 55) { setWarning("FINAL RHYTHM RUSH!"); }
+    if (elapsed === 20) { setWarning("BEATS ARE RISING FASTER"); speedRef.current = "NORMAL"; setSpeedLabel("NORMAL"); }
+    if (elapsed === 40) { setWarning("CHALLENGE MODE ACTIVATED"); speedRef.current = "FAST"; setSpeedLabel("FAST"); }
+    if (elapsed === 50) { setWarning("FINAL RHYTHM RUSH!"); speedRef.current = "EXTREME"; setSpeedLabel("EXTREME"); }
     if (warning) {
       const t = setTimeout(() => setWarning(null), 2200);
       return () => clearTimeout(t);
@@ -91,44 +98,54 @@ export function Gameplay({ playerName, onEnd }: { playerName: string; onEnd: (r:
   // End game
   useEffect(() => {
     if (phase === "play" && time === 0) {
-      stopBeat();
+      stopMusic();
       setPhase("ended");
       const s = tapStats.current;
       onEnd({
         score, bestCombo, accuracy: s.total ? Math.round((s.correct / s.total) * 100) : 0,
         hits: getRecording(), formulaCounts: s.formulaCounts, totalTaps: s.total, correctTaps: s.correct,
+        duration: DURATION,
       });
     }
   }, [time, phase, score, bestCombo, onEnd]);
 
-  // Beat spawner
+  // Floating beat spawner — notes rise from bottom to top
   useEffect(() => {
     if (phase !== "play" || paused) return;
     const spawn = () => {
       const speed = speedRef.current;
-      const lifetime = speed === "EXTREME" ? 1700 : speed === "FAST" ? 2200 : 2800;
-      const maxOnScreen = speed === "EXTREME" ? 6 : speed === "FAST" ? 5 : 4;
-      if (beatsRef.current.length >= maxOnScreen) return;
-      // 70% chance to spawn from queue head, otherwise random for distractor
-      const id = Math.random() < 0.7 ? queueRef.current[0] : pick(FORMULAS).id;
-      const angle = Math.random() * Math.PI * 2;
-      const radius = 22 + Math.random() * 14;
-      const x = 50 + Math.cos(angle) * radius;
-      const y = 50 + Math.sin(angle) * radius * 0.75;
+      const cfg = SPEED_CFG[speed];
+      if (beatsRef.current.length >= cfg.maxOnScreen) return;
+      // 75% chance the next note matches the current queue head
+      const id = Math.random() < 0.75 ? queueRef.current[0] : pick(FORMULAS).id;
+      // distribute across columns (avoid edges)
+      const x = 12 + Math.random() * 76;
+      const sway = 3 + Math.random() * 5;
       const beat: ActiveBeat = {
         uid: `${Date.now()}-${Math.random()}`,
-        id, x, y, spawn: performance.now(), lifetime,
+        id, x, sway,
+        spawn: performance.now(),
+        lifetime: cfg.lifetime,
       };
       setBeats((b) => [...b, beat]);
       window.setTimeout(() => {
         setBeats((b) => b.filter((x) => x.uid !== beat.uid));
-      }, lifetime);
+      }, cfg.lifetime + 100);
     };
-    const speed = speedRef.current;
-    const interval = speed === "EXTREME" ? 600 : speed === "FAST" ? 800 : 1100;
-    const id = setInterval(spawn, interval);
-    return () => clearInterval(id);
+    const cfg = SPEED_CFG[speedRef.current];
+    const id = setInterval(spawn, cfg.interval);
+    // burst extra notes in EXTREME for high-density feel
+    let burst: number | null = null;
+    if (speedRef.current === "EXTREME") {
+      burst = window.setInterval(spawn, cfg.interval * 0.6);
+    }
+    return () => { clearInterval(id); if (burst) clearInterval(burst); };
   }, [phase, paused, speedLabel]);
+
+  // Drive dynamic music intensity from combo
+  useEffect(() => {
+    setMusicIntensity(Math.min(1, combo / 22));
+  }, [combo]);
 
   // Coach messages
   useEffect(() => {
@@ -222,7 +239,7 @@ export function Gameplay({ playerName, onEnd }: { playerName: string; onEnd: (r:
         {/* LEFT */}
         <div className="flex flex-col gap-4">
           <Panel title="HOW TO PLAY">
-            <p className="text-sm leading-relaxed text-white/80">Tap the correct NAN formula beat shown in the queue before it disappears.</p>
+            <p className="text-sm leading-relaxed text-white/80">Floating notes rise from below. Tap the one matching the <span className="neon-text-cyan">NEXT</span> beat in the sequence panel.</p>
           </Panel>
           <Panel title="COMBO">
             <div className="font-display text-6xl font-black neon-text-gold">x{combo}</div>
@@ -244,8 +261,14 @@ export function Gameplay({ playerName, onEnd }: { playerName: string; onEnd: (r:
 
         {/* CENTER */}
         <div className="relative">
+          {/* Hit zone line — visual cue for sweet spot */}
+          <div className="pointer-events-none absolute left-0 right-0 top-[28%] z-10">
+            <div className="h-px w-full" style={{ background: "linear-gradient(90deg, transparent, color-mix(in oklch, var(--neon-cyan) 60%, transparent), transparent)" }} />
+            <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 font-display text-[9px] tracking-[0.5em] text-[color:var(--neon-cyan)]/70">◆ HIT ZONE ◆</div>
+          </div>
+
           {/* Holographic floor */}
-          <div className="absolute left-1/2 top-[58%] -translate-x-1/2 -translate-y-1/2">
+          <div className="absolute left-1/2 top-[72%] -translate-x-1/2 -translate-y-1/2">
             {[1, 2, 3].map((i) => (
               <div key={i}
                 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border"
@@ -259,16 +282,16 @@ export function Gameplay({ playerName, onEnd }: { playerName: string; onEnd: (r:
             ))}
           </div>
 
-          {/* Baby */}
+          {/* Baby — pushed to background so floating notes are the focus */}
           <motion.div
             animate={babyState === "happy" ? { y: [0, -10, 0], rotate: [-2, 2, -2] } : babyState === "neutral" ? { y: [0, -5, 0] } : { y: 0 }}
             transition={{ duration: babyState === "happy" ? 0.5 : 1.2, repeat: Infinity }}
-            className="absolute left-1/2 top-[52%] -translate-x-1/2 -translate-y-1/2"
+            className="pointer-events-none absolute left-1/2 top-[68%] -translate-x-1/2 -translate-y-1/2 opacity-70"
           >
             <div className="relative">
               <div className="absolute inset-0 -m-12 rounded-full animate-pulse"
                 style={{ background: "radial-gradient(circle, color-mix(in oklch, var(--neon-cyan) 35%, transparent), transparent 70%)" }} />
-              <img src={babyImg} alt="Baby" className="relative h-[420px] w-auto" draggable={false} />
+              <img src={babyImg} alt="Baby" className="relative h-[260px] w-auto" draggable={false} />
             </div>
           </motion.div>
 
@@ -285,12 +308,10 @@ export function Gameplay({ playerName, onEnd }: { playerName: string; onEnd: (r:
             )}
           </AnimatePresence>
 
-          {/* Beats */}
-          <AnimatePresence>
-            {beats.map((b) => (
-              <BeatNode key={b.uid} beat={b} onTap={() => handleTap(b)} isTarget={queue[0] === b.id} />
-            ))}
-          </AnimatePresence>
+          {/* Floating beats — bottom-to-top */}
+          {beats.map((b) => (
+            <FloatingBeat key={b.uid} beat={b} onTap={() => handleTap(b)} isTarget={queue[0] === b.id} />
+          ))}
 
           {/* Perfect combo float */}
           <AnimatePresence>
@@ -395,46 +416,94 @@ export function Gameplay({ playerName, onEnd }: { playerName: string; onEnd: (r:
   );
 }
 
-function BeatNode({ beat, onTap, isTarget }: { beat: ActiveBeat; onTap: () => void; isTarget: boolean }) {
+const SPEED_CFG = {
+  CALM:    { lifetime: 4200, interval: 900,  maxOnScreen: 4, travelVH: 90 },
+  NORMAL:  { lifetime: 3400, interval: 750,  maxOnScreen: 5, travelVH: 90 },
+  FAST:    { lifetime: 2400, interval: 550,  maxOnScreen: 6, travelVH: 90 },
+  EXTREME: { lifetime: 1700, interval: 380,  maxOnScreen: 8, travelVH: 90 },
+} as const;
+
+function FloatingBeat({ beat, onTap, isTarget }: { beat: ActiveBeat; onTap: () => void; isTarget: boolean }) {
   const f = FORMULAS.find((x) => x.id === beat.id)!;
+  // Travel from y:100% → y:-10% (off top) over `lifetime`
   return (
     <motion.button
-      initial={{ scale: 0, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      exit={{ scale: 1.5, opacity: 0 }}
-      transition={{ type: "spring", damping: 14 }}
       onClick={onTap}
-      className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer focus:outline-none"
-      style={{ left: `${beat.x}%`, top: `${beat.y}%` }}
+      initial={{ y: "110%", x: 0, scale: 0.8, opacity: 0 }}
+      animate={{
+        y: "-15%",
+        x: [0, beat.sway, -beat.sway, 0],
+        scale: 1,
+        opacity: 1,
+      }}
+      transition={{
+        y: { duration: beat.lifetime / 1000, ease: "linear" },
+        x: { duration: beat.lifetime / 1000, ease: "easeInOut", times: [0, 0.33, 0.66, 1] },
+        scale: { duration: 0.35, ease: "backOut" },
+        opacity: { duration: 0.3 },
+      }}
+      className="absolute -translate-x-1/2 cursor-pointer focus:outline-none"
+      style={{ left: `${beat.x}%`, bottom: 0 }}
     >
       <div className="relative">
-        {/* energy beam to floor */}
+        {/* particle trail */}
         <div
-          className="absolute left-1/2 top-full h-32 w-1 -translate-x-1/2 opacity-60"
-          style={{ background: `linear-gradient(180deg, ${f.hex}, transparent)`, filter: "blur(1px)" }}
+          className="absolute left-1/2 top-full h-32 w-1.5 -translate-x-1/2 opacity-80"
+          style={{
+            background: `linear-gradient(180deg, ${f.hex}, transparent)`,
+            filter: "blur(2px)",
+          }}
         />
+        {/* outer pulse ring */}
         <div
           className="absolute inset-0 animate-pulse-ring rounded-full"
           style={{ boxShadow: `0 0 0 2px ${f.hex}` }}
         />
+        {/* holographic disc */}
         <div
-          className="relative flex h-28 w-28 flex-col items-center justify-center rounded-full border-2 font-display text-xs font-bold backdrop-blur-md"
+          className="relative flex h-24 w-24 flex-col items-center justify-center rounded-full border-2 font-display text-xs font-bold backdrop-blur-md"
           style={{
             color: "white",
             borderColor: f.hex,
-            background: `radial-gradient(circle, color-mix(in oklch, ${f.hex} 35%, transparent), color-mix(in oklch, ${f.hex} 5%, transparent))`,
-            boxShadow: `0 0 40px ${f.hex}, inset 0 0 30px color-mix(in oklch, ${f.hex} 40%, transparent)`,
+            background: `radial-gradient(circle, color-mix(in oklch, ${f.hex} 38%, transparent), color-mix(in oklch, ${f.hex} 5%, transparent))`,
+            boxShadow: `0 0 50px ${f.hex}, inset 0 0 30px color-mix(in oklch, ${f.hex} 40%, transparent)`,
           }}
         >
-          <div className="text-[15px] tracking-wide" style={{ textShadow: `0 0 10px ${f.hex}` }}>{f.label.toUpperCase()}</div>
-          <div className="mt-0.5 text-[9px] font-normal text-white/80">{f.sub}</div>
+          <FormulaIcon id={f.id} hex={f.hex} />
+          <div className="mt-1 text-[11px] tracking-wide" style={{ textShadow: `0 0 10px ${f.hex}` }}>{f.label.toUpperCase()}</div>
         </div>
         {isTarget && (
-          <div className="absolute -top-7 left-1/2 -translate-x-1/2 font-display text-[10px] tracking-[0.3em]" style={{ color: f.hex }}>● TAP</div>
+          <motion.div
+            animate={{ opacity: [0.6, 1, 0.6] }}
+            transition={{ duration: 0.6, repeat: Infinity }}
+            className="absolute -top-6 left-1/2 -translate-x-1/2 font-display text-[10px] tracking-[0.3em]"
+            style={{ color: f.hex }}
+          >
+            ● TAP
+          </motion.div>
         )}
       </div>
     </motion.button>
   );
+}
+
+function FormulaIcon({ id, hex }: { id: string; hex: string }) {
+  // Simple inline SVG glyphs per formula
+  const common = { width: 22, height: 22, fill: "none", stroke: hex, strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  switch (id) {
+    case "DHA":        return <svg {...common}><path d="M11 2c4 3 4 7 0 10-4 3-4 7 0 10" /><circle cx="11" cy="11" r="2" /></svg>;
+    case "HMO":        return <svg {...common}><circle cx="7" cy="11" r="3" /><circle cx="15" cy="7" r="2.5" /><circle cx="15" cy="15" r="2.5" /><path d="M9 10l4-2M9 12l4 2" /></svg>;
+    case "PROBIOTICS": return <svg {...common}><ellipse cx="11" cy="11" rx="6" ry="3" /><circle cx="8" cy="11" r="1" /><circle cx="14" cy="11" r="1" /></svg>;
+    case "IRON":       return <svg {...common}><path d="M5 3h12l-2 8a4 4 0 0 1-8 0z" /></svg>;
+    case "CALCIUM":    return <svg {...common}><path d="M11 2l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" /></svg>;
+    case "PROTEIN":    return <svg {...common}><path d="M4 10c2-4 4-4 7 0s5 4 7 0" /><path d="M4 14c2-4 4-4 7 0s5 4 7 0" /></svg>;
+    case "VITD":       return <svg {...common}><circle cx="11" cy="11" r="3.5" /><path d="M11 2v2M11 18v2M2 11h2M18 11h2M4.5 4.5l1.5 1.5M16 16l1.5 1.5M4.5 17.5L6 16M16 6l1.5-1.5" /></svg>;
+    case "OMEGA":      return <svg {...common}><path d="M3 14c4 4 8-6 12-2M3 10c4-4 8 6 12 2" /></svg>;
+    case "IMMUNITY":   return <svg {...common}><path d="M11 2l7 3v6c0 5-3 8-7 9-4-1-7-4-7-9V5z" /></svg>;
+    case "GROWTH":     return <svg {...common}><path d="M11 18V6M6 11l5-5 5 5" /></svg>;
+    case "DIGESTION":  return <svg {...common}><path d="M5 7c4 0 4 8 8 8s4-8 8-8" /></svg>;
+    default:           return null;
+  }
 }
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
